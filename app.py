@@ -17,9 +17,9 @@ with st.form("form_rn"):
     sala = st.text_input("Sala / ID")
     peso_nac = st.number_input("Peso nacimiento (g)", min_value=0, step=1, format="%d")
 
-    peso_1 = st.number_input("Peso 1ddv (g)", min_value=0.0, step=10.0)
-    peso_2 = st.number_input("Peso 2ddv (g)", min_value=0.0, step=10.0)
-    peso_3 = st.number_input("Peso 3ddv (g)", min_value=0.0, step=10.0)
+    peso_1 = st.number_input("Peso 1ddv (g)", min_value=0, step=1)
+    peso_2 = st.number_input("Peso 2ddv (g)", min_value=0, step=1)
+    peso_3 = st.number_input("Peso 3ddv (g)", min_value=0 step=1)
     submit = st.form_submit_button("Calcular y guardar")
 
 if submit:
