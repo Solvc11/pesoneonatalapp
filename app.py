@@ -1,82 +1,64 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import os
 
-st.set_page_config(page_title="Cálculo de peso neonatal", layout="wide")
+st.title("📊 Cálculo de peso neonatal")
 
-st.title("🍼 Dashboard de Cálculo de Peso Neonatal")
+# Inicializar dataset en la sesión
+if "data" not in st.session_state:
+    st.session_state.data = pd.DataFrame(columns=[
+        "Sala", "Peso nacimiento", "Peso 1ddv", "Peso 2ddv", "Peso 3ddv",
+        "% pérdida 1ddv", "% pérdida 2ddv", "% pérdida 3ddv"
+    ])
 
-st.markdown("Sube un archivo Excel con las columnas: **sala**, **peso 1ddv**, **peso 2ddv**, **peso 3ddv**. Si tu archivo tiene una columna identificadora (ID o Nombre), la app graficará por paciente.")
+st.header("➕ Ingresar datos del recién nacido")
 
-# Cargar archivo: preferencia a upload; si no, intenta cargar el ejemplo incluido
-uploaded = st.file_uploader("Sube tu archivo Excel (o usa el ejemplo incluido)", type=["xlsx"])
-if uploaded is not None:
-    df = pd.read_excel(uploaded)
-else:
-    example_path = "calculo de peso.xlsx"
-    if os.path.exists(example_path):
-        df = pd.read_excel(example_path)
-        st.info("Usando el archivo de ejemplo incluido en la app.")
-    else:
-        st.info("Sube un archivo Excel para comenzar.")
-        st.stop()
+with st.form("form_rn"):
+    sala = st.text_input("Sala / ID")
+    peso_nac = st.number_input("Peso nacimiento (g)", min_value=0.0, step=10.0)
+    peso_1 = st.number_input("Peso 1ddv (g)", min_value=0.0, step=10.0)
+    peso_2 = st.number_input("Peso 2ddv (g)", min_value=0.0, step=10.0)
+    peso_3 = st.number_input("Peso 3ddv (g)", min_value=0.0, step=10.0)
+    submit = st.form_submit_button("Calcular y guardar")
 
-# Asegurar que las columnas importantes existan
-required_cols = ['peso nacimiento', 'peso 1ddv', 'peso 2ddv', 'peso 3ddv']
-missing = [c for c in required_cols if c not in df.columns]
-if missing:
-    st.error(f"No se encontraron las columnas esperadas en el Excel: {missing}. Revisa los nombres de columna y prueba subir el archivo de nuevo.")
-    st.write("Columnas detectadas en tu archivo:", list(df.columns))
-    st.stop()
+if submit:
+    if peso_nac > 0:
+        perdida_1 = ((peso_nac - peso_1) / peso_nac) * 100 if peso_1 > 0 else None
+        perdida_2 = ((peso_nac - peso_2) / peso_nac) * 100 if peso_2 > 0 else None
+        perdida_3 = ((peso_nac - peso_3) / peso_nac) * 100 if peso_3 > 0 else None
 
-# Normalizar columnas (el código asume nombres exactos detectados)
-col_pn = "peso nacimiento"
-col_d1 = "peso 1ddv"
-col_d2 = "peso 2ddv"
-col_d3 = "peso 3ddv"
+        # Agregar fila
+        new_row = {
+            "Sala": sala,
+            "Peso nacimiento": peso_nac,
+            "Peso 1ddv": peso_1,
+            "Peso 2ddv": peso_2,
+            "Peso 3ddv": peso_3,
+            "% pérdida 1ddv": perdida_1,
+            "% pérdida 2ddv": perdida_2,
+            "% pérdida 3ddv": perdida_3,
+        }
+        st.session_state.data = pd.concat(
+            [st.session_state.data, pd.DataFrame([new_row])],
+            ignore_index=True
+        )
+        st.success("Datos guardados ✅")
 
-# Calcular % pérdida (si no existen o para sobreescribir)
-df["% perdida 1ddv"] = (df[col_pn] - df[col_d1]) / df[col_pn] * 100
-df["% perdida 2ddv"] = (df[col_pn] - df[col_d2]) / df[col_pn] * 100
-df["% perdida 3ddv"] = (df[col_pn] - df[col_d3]) / df[col_pn] * 100
+# Mostrar tabla
+if not st.session_state.data.empty:
+    st.subheader("📋 Tabla de registros")
+    st.dataframe(st.session_state.data.style.applymap(
+        lambda x: "color: red" if isinstance(x, float) and x > 10 else None
+    ))
 
-# Mostrar tabla con formato: resaltar >10%
-def highlight_loss(val):
-    try:
-        v = float(val)
-    except:
-        return ''
-    color = 'color: red;' if v > 10 else ''
-    return color
+    # Gráfico de evolución promedio
+    pesos_cols = ["Peso nacimiento", "Peso 1ddv", "Peso 2ddv", "Peso 3ddv"]
+    df_mean = st.session_state.data[pesos_cols].mean().reset_index()
+    df_mean.columns = ["Día", "Peso promedio"]
 
-st.subheader("📊 Tabla con cálculos")
-styled = df.style.applymap(highlight_loss, subset=["% perdida 1ddv", "% perdida 2ddv", "% perdida 3ddv"])
-st.dataframe(styled)
+    fig = px.line(df_mean, x="Día", y="Peso promedio", markers=True, title="Evolución promedio de peso")
+    st.plotly_chart(fig)
 
-# Gráfico de evolución promedio
-st.subheader("📉 Evolución del peso promedio (por día)")
-df_mean = pd.DataFrame({
-    "Nacimiento": [df[col_pn].mean()],
-    "1ddv": [df[col_d1].mean()],
-    "2ddv": [df[col_d2].mean()],
-    "3ddv": [df[col_d3].mean()]
-})
-df_mean = df_mean.melt(var_name="Día", value_name="Peso promedio")
-fig = px.line(df_mean, x="Día", y="Peso promedio", markers=True, title="Evolución del peso promedio")
-st.plotly_chart(fig, use_container_width=True)
-
-# Evolución por paciente (si existe columna ID o similar)
-id_candidates = [c for c in df.columns if c.lower() in ['id','paciente','nombre','rut','id paciente','identificador']]
-if id_candidates:
-    id_col = id_candidates[0]
-    st.subheader("📈 Evolución individual de peso")
-    df_long = df.melt(id_vars=id_col, value_vars=[col_pn, col_d1, col_d2, col_d3],
-                      var_name="Día", value_name="Peso")
-    fig2 = px.line(df_long, x="Día", y="Peso", color=id_col, markers=True, title="Evolución de peso por paciente")
-    st.plotly_chart(fig2, use_container_width=True)
-
-# Descarga de resultados
-st.subheader("📥 Descargar resultados")
-csv = df.to_csv(index=False).encode("utf-8")
-st.download_button("Descargar CSV con % perdida", data=csv, file_name="resultado_peso.csv", mime="text/csv")
+    # Descargar CSV
+    csv = st.session_state.data.to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Descargar registros en CSV", csv, "peso_neonatal.csv", "text/csv")
